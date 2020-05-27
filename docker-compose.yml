@@ -1,0 +1,96 @@
+version: '2'
+services:
+
+    mongo:
+        image: mongo:3.4
+        restart: unless-stopped
+        volumes:
+            - "${LRS_DATA_LOCATION}/mongo:/data/db"
+
+    redis:
+        image: redis:4-alpine
+        restart: unless-stopped
+
+    xapi:
+        image: learninglocker/xapi-service:2.1.10
+        restart: unless-stopped
+        environment:
+            - MONGO_URL=mongodb://mongo:27017/learninglocker_v2
+            - MONGO_DB=learninglocker_v2
+            - REDIS_URL=redis://redis:6379/0
+        depends_on:
+            - mongo
+            - redis
+        volumes:
+            - "${LRS_DATA_LOCATION}/xapi-storage:/usr/src/app/storage"
+
+    api:
+        image: elcsrijan/learninglocker-app:${DOCKER_TAG}
+        environment:
+            - DOMAIN_NAME=${DOMAIN_NAME}
+            - APP_SECRET=${APP_SECRET}
+            - SMTP_HOST=${SMTP_HOST}
+            - SMTP_PORT=${SMTP_PORT}
+            - SMTP_SECURED=${SMTP_SECURED}
+            - SMTP_USER=${SMTP_USER}
+            - SMTP_PASS=${SMTP_PASS}
+        command: "node api/dist/server"
+        restart: unless-stopped
+        depends_on:
+            - mongo
+            - redis
+        volumes:
+            - "${LRS_DATA_LOCATION}/app-storage:/opt/learninglocker/storage"
+
+    ui:
+        image: elcsrijan/learninglocker-app:${DOCKER_TAG}
+        environment:
+            - DOMAIN_NAME=${DOMAIN_NAME}
+            - APP_SECRET=${APP_SECRET}
+            - SMTP_HOST=${SMTP_HOST}
+            - SMTP_PORT=${SMTP_PORT}
+            - SMTP_SECURED=${SMTP_SECURED}
+            - SMTP_USER=${SMTP_USER}
+            - SMTP_PASS=${SMTP_PASS}
+        command: "./entrypoint-ui.sh"
+        restart: unless-stopped
+        depends_on:
+            - mongo
+            - redis
+            - api
+        volumes:
+            - "${LRS_DATA_LOCATION}/app-storage:/opt/learninglocker/storage"
+            - "${LRS_DATA_LOCATION}/ui-logs:/opt/learninglocker/logs"
+
+    worker:
+        image: elcsrijan/learninglocker-app:${DOCKER_TAG}
+        environment:
+            - DOMAIN_NAME=${DOMAIN_NAME}
+            - APP_SECRET=${APP_SECRET}
+            - SMTP_HOST=${SMTP_HOST}
+            - SMTP_PORT=${SMTP_PORT}
+            - SMTP_SECURED=${SMTP_SECURED}
+            - SMTP_USER=${SMTP_USER}
+            - SMTP_PASS=${SMTP_PASS}
+        command: "node worker/dist/server"
+        restart: unless-stopped
+        depends_on:
+            - mongo
+            - redis
+        volumes:
+            - "${LRS_DATA_LOCATION}/app-storage:/opt/learninglocker/storage"
+
+    nginx:
+        image: elcsrijan/learninglocker-nginx:${DOCKER_TAG}
+        environment:
+            - DOMAIN_NAME=${DOMAIN_NAME}
+        restart: unless-stopped
+        depends_on:
+            - ui
+            - xapi
+        ports:
+            - "443:443"
+            - "80:81"
+        volumes:
+                - "/learninglocker/nginx/dev-ssl/fullchain.pem:/root/ssl/fullchain.pem:ro"
+                - "/learninglocker/nginx/dev-ssl/privkey.pem:/root/ssl/privkey.pem:ro"
